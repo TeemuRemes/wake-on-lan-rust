@@ -18,7 +18,9 @@
 //! To choose the source and destination IPs and ports, use `send_to()`. If you want to access the
 //! contents of the magic packet, use `magic_bytes()`.
 
-use std::net::{UdpSocket, ToSocketAddrs, Ipv4Addr};
+use std::convert::TryFrom;
+use std::convert::TryInto;
+use std::net::{Ipv4Addr, ToSocketAddrs, UdpSocket};
 
 /// A Wake-on-LAN magic packet.
 pub struct MagicPacket {
@@ -88,7 +90,49 @@ impl MagicPacket {
     pub fn magic_bytes(&self) -> &[u8; 102] {
         &self.magic_bytes
     }
-    
 }
 
 const MAGIC_BYTES_HEADER: [u8; 6] = [0xFF; 6];
+
+impl TryFrom<&str> for MagicPacket {
+    type Error = &'static str;
+
+    fn try_from(mac_string: &str) -> Result<MagicPacket, Self::Error> {
+        let mac_address = mac_string
+            .split(":")
+            .flat_map(|hex| u8::from_str_radix(hex, 16))
+            .collect::<Vec<u8>>()
+            .try_into()
+            .map_err(|_| "Unable to parse MAC address")?;
+
+        Ok(Self::new(&mac_address))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn try_from_valid() {
+        let magic_packet: Result<MagicPacket, &'static str> = "00:11:22:33:44:AA".try_into();
+        assert!(magic_packet.is_ok());
+    }
+
+    #[test]
+    fn try_from_too_short() {
+        let magic_packet: Result<MagicPacket, &'static str> = "00:11:22:33:44".try_into();
+        assert!(magic_packet.is_err());
+    }
+
+    #[test]
+    fn try_from_invalid_u8() {
+        let magic_packet: Result<MagicPacket, &'static str> = "00:11:22:33:44:XX".try_into();
+        assert!(magic_packet.is_err());
+    }
+
+    #[test]
+    fn try_from_lowercase() {
+        let magic_packet: Result<MagicPacket, &'static str> = "00:11:22:33:44:aa".try_into();
+        assert!(magic_packet.is_ok());
+    }
+}
